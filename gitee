@@ -1,0 +1,237 @@
+#! /usr/bin/env bash
+
+### basic utilities
+
+GT_URL='https://gitee.com/api'
+
+gt.post(){
+    local url="$GT_URL${1:?Suburl}"
+    echo "gt.post $url" >&2
+    curl -X POST --header 'Content-Type: application/json;charset=UTF-8' "$url" -d "${2:?-body}" 2>/dev/null
+}
+
+gt.get.header(){
+    local url="$GT_URL${1:?Suburl}?access_token=$GT_TOKEN${2}"
+    echo "gt.get.header $url" >&2
+    curl -X GET -I --header 'Content-Type: application/json;charset=UTF-8' "$url" 2>/dev/null
+}
+
+gt.get(){
+    local url="$GT_URL${1:?Suburl}"
+    echo "gt.get $url" >&2
+    curl -X GET --header 'Content-Type: application/json;charset=UTF-8' "$url?access_token=$GT_TOKEN${2}" # 2>/dev/null
+    # &type=all&page=1&per_page=20
+}
+
+### gitee
+
+gt.org.create(){
+    local BODY
+    IFS='' read -r -d '' BODY <<A 
+{
+    "access_token": "$GT_TOKEN",
+    "name": "$NAME",
+    "org":"$NAME",
+}
+A
+    gt.post "/v5/users/organization" "$BODY"
+}
+
+# list facility
+
+# gt.repo.list(){
+#     case $GT_VENDOR_TYPE in
+#     ENTERPRISE)
+#         gt.enterprise.repo.list "$@";;
+#     ORGANIZATION)
+#         gt.organization.repo.list;;
+#     USER)
+#         gt.user.repo.list;;
+#     esac
+# }
+
+# TODO: using createdTime, asc
+gt.user.repo.allNames(){
+    local max_page
+    max_page=$(gt.get.header "/v5/user/repos" "&type=all&page=1&per_page=20" | grep "total_page" | cut -d ":" -f 2 | tr -d '\r')
+    # max_page=$(cat c.txt | grep "total_page" | cut -d ":" -f 2 | tr -d '\r')
+    for i in $(seq "$max_page"); do
+        gt.get "/v5/user/repos" "&type=all&page=$i&per_page=100" | jq -r ".[] | .full_name"
+    done
+}
+
+gt.enterprise.repo.allNames(){
+    local ENTERPRISE=${GROUP:?Provide enterprise name using GROUP environement variable}
+
+    local max_page
+    max_page=$(gt.get.header "/v5/enterprises/$ENTERPRISE/repos" "&type=all&page=1&per_page=20" | grep "total_page" | cut -d ":" -f 2 | tr -d '\r')
+    # max_page=$(cat c.txt | grep "total_page" | cut -d ":" -f 2 | tr -d '\r')
+    for i in $(seq "$max_page"); do
+        gt.get "/v5/enterprises/$ENTERPRISE/repos" "&type=all&page=$i&per_page=100" | jq -r ".[] | .full_name"
+    done
+}
+
+gt.organization.repo.allNames(){
+    local ORGANIZATION=${GROUP:?Provide organization name using GROUP environement variable}
+
+    local max_page
+    max_page=$(gt.get.header "/v5/organizations/$ORGANIZATION/repos" "&type=all&page=1&per_page=20" | grep "total_page" | cut -d ":" -f 2 | tr -d '\r')
+    # max_page=$(cat c.txt | grep "total_page" | cut -d ":" -f 2 | tr -d '\r')
+    for i in $(seq "$max_page"); do
+        gt.get "/v5/organizations/$ORGANIZATION/repos" "&type=all&page=$i&per_page=100" | jq -r ".[] | .full_name"
+    done
+}
+
+## create repo
+# gt.repo.create(){
+#     case $GT_VENDOR_TYPE in
+#     ENTERPRISE)
+#         gt.enterprise.repo.create "$@";;
+#     ORGANIZATION)
+#         gt.organization.repo.create "$@";;
+#     USER)
+#         gt.user.repo.create "$@";;
+#     esac
+# }
+
+# arguments NAME
+gt.user.repo.create(){
+    local BODY
+    IFS='' read -r -d '' BODY <<TA
+{
+    "access_token": "$GT_TOKEN",
+    "name": "$NAME",
+    "has_issues":"true",
+    "has_wiki":"true",
+    "private":"true"
+}
+TA
+    # echo "hi: $BODY"
+    gt.post "/v5/user/repos" "$BODY"
+    local code=$?
+    echo "code: $code" >&2
+    return $code
+}
+
+# ORGANIZATION NAME
+
+# private, public
+gt.organization.repo.create(){
+    local ORGANIZATION=${GROUP:?Provide organization name using GROUP environement variable}
+    local ACCESS_TYPE=${ACCESS_TYPE:-private}
+    local v=0
+    case $ACCESS_TYPE in
+        public) v=1;;
+        private) v=0;;
+        innerSource) v=2;;
+        *)  echo "Environment Variable ERROR: ACCESS_TYPE only accept private, public, innerSource" >&2
+            return 1;;
+    esac
+
+    local BODY
+    IFS='' read -r -d '' BODY <<TA
+{
+    "access_token": "$GT_TOKEN",
+    "name": "$NAME",
+    "has_issues":"true",
+    "has_wiki":"true",
+    "public":$v,
+    "org": "$ORGANIZATION"
+}
+TA
+    gt.post "/v5/orgs/${ORGANIZATION}/repos" "$BODY"
+    local code=$?
+    echo "code: $code"
+    return $code
+}
+
+# ENTERPRISE NAME
+# private, public, innerSource
+gt.enterprise.repo.create(){
+    local ENTERPRISE=${GROUP:?Provide enterprise name using GROUP environement variable}
+
+    local ACCESS_TYPE=${ACCESS_TYPE:-private}
+    local v=0
+    case $ACCESS_TYPE in
+        public) v=1;;
+        private) v=0;;
+        innerSource) v=2;;
+        *)  echo "Environment Variable ERROR: ACCESS_TYPE only accept private, public, innerSource" >&2
+            return 1;;
+    esac
+
+    local BODY
+    IFS='' read -r -d '' BODY <<TA
+{
+    "access_token": "$GT_TOKEN",
+    "name": "$NAME",
+    "has_issues":"true",
+    "has_wiki":"true",
+    "private":$v,
+    "enterprise":"${ENTERPRISE}"
+}
+TA
+    # echo "hi: $BODY" >&2
+    gt.post "/v5/enterprises/${ENTERPRISE}/repos" "$BODY"
+    local code=$?
+    echo "code: $code" >&2
+    return $code
+}
+
+gt.token.info(){
+   gt.get "/v5/user"
+}
+
+gt.user.info(){
+    :
+}
+
+gt.organization.info(){
+    :
+}
+
+gt.enterprise.info(){
+    :
+}
+
+
+gt.user.client() {
+    local group_name=${1:?Provide user name}
+    GROUP_TYPE=user gt.client "$@"
+}
+
+gt.organization.client() {
+    local group_name=${1:?Provide organziation name}
+    GROUP_TYPE=organization gt.client "$@"
+}
+
+gt.enterprise.client() {
+    local group_name=${1:?Provide enterprise name}
+    GROUP_TYPE=enterprise gt.client "$@"
+}
+
+gt.client(){
+    local group_name=${1:?Provide user/enterprise/organziation name}
+    local variable=${2:?Provide variable name}
+
+    eval "
+    $variable.info() { GROUP=$group_name gt.$GROUP_TYPE.info \"\$@\"; }
+    $variable.repo.info() { GROUP=$group_name gt.repo.info \"\$@\"; }
+    $variable.repo.create() { GROUP=$group_name gt.$GROUP_TYPE.repo.create \"\$@\"; }
+    $variable.repo.allNames() { GROUP=$group_name gt.$GROUP_TYPE.repo.allNames \"\$@\"; }
+    "
+}
+
+# main(){
+#     # We will know what kind of user it is.
+#     gt.client edwinjhlee el
+
+#     export GROUP=edwinjhlee 
+#     export GROUP_TYPE=user
+
+
+# }
+
+if [ $# -gt 0 ]; then
+    eval "$@"
+fi
